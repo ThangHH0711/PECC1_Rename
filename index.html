@@ -14,17 +14,17 @@
         .main-card { max-width: 1000px; width: 95%; background: white; margin: 20px; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
         .api-box { background: #eef2ff; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; border: 1px solid #dbeafe; }
         .api-box input { flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
-        .drop-zone { border: 3px dashed #cbd5e1; border-radius: 15px; padding: 60px 20px; text-align: center; cursor: pointer; transition: 0.3s; background: #fafafa; }
+        .drop-zone { border: 3px dashed #cbd5e1; border-radius: 15px; padding: 40px 20px; text-align: center; cursor: pointer; transition: 0.3s; background: #fafafa; }
         .drop-zone:hover { border-color: var(--evn-blue); background: #f0f7ff; }
         table { width: 100%; border-collapse: collapse; margin-top: 30px; }
         th { background: var(--evn-blue); color: white; padding: 15px; text-align: left; }
-        td { padding: 15px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+        td { padding: 15px; border-bottom: 1px solid #f1f5f9; font-size: 14px; word-break: break-all; }
         .btn-save { background: var(--evn-red); color: white; border: none; padding: 18px; width: 100%; border-radius: 10px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 25px; }
         .status { font-weight: bold; font-size: 12px; padding: 4px 8px; border-radius: 6px; }
         .status-loading { background: #fef9c3; color: #854d0e; }
         .status-done { background: #dcfce7; color: #166534; }
         .status-error { background: #fee2e2; color: #991b1b; }
-        #debug { background: #1e293b; color: #38bdf8; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 11px; margin-top: 20px; white-space: pre-wrap; display: block; max-height: 200px; overflow-y: auto; }
+        #debug { background: #1e293b; color: #38bdf8; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 11px; margin-top: 20px; white-space: pre-wrap; display: block; max-height: 150px; overflow-y: auto; }
     </style>
 </head>
 <body>
@@ -32,7 +32,7 @@
         <a href="#" class="logo">EVN<span>PECC1</span></a>
         <div style="text-align: right">
             <div style="color: var(--evn-blue); font-weight: bold">HỆ THỐNG ĐỔI TÊN PDF AI</div>
-            <div style="font-size: 11px; color: #94a3b8">Bản cập nhật Siêu tương thích (2.5/2.0)</div>
+            <div style="font-size: 11px; color: #94a3b8">Phiên bản Chính xác Tuyệt đối v7.0</div>
         </div>
     </div>
 
@@ -45,7 +45,7 @@
 
         <div id="dropZone" class="drop-zone">
             <h3>🚀 Kéo thả file PDF vào đây</h3>
-            <p>Hỗ trợ đa mô hình Gemini 1.5, 2.0, 2.5</p>
+            <p>Trích xuất chuẩn: [Ngày]-[Số CV]-[Mã Dự án]-[Nội dung].pdf</p>
         </div>
 
         <div id="resultArea" style="display: none;">
@@ -63,7 +63,6 @@
         import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        const dropZone = document.getElementById('dropZone');
         const apiKeyInput = document.getElementById('apiKey');
         const resultArea = document.getElementById('resultArea');
         const resultBody = document.getElementById('resultBody');
@@ -76,40 +75,47 @@
 
         apiKeyInput.value = localStorage.getItem('pecc1_key') || '';
 
-        dropZone.onclick = () => {
+        document.getElementById('dropZone').onclick = () => {
             const input = document.createElement('input'); input.type = 'file'; input.multiple = true;
             input.onchange = (e) => handleFiles(e.target.files); input.click();
         };
 
-        dropZone.ondragover = (e) => e.preventDefault();
-        dropZone.ondrop = (e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); };
+        document.getElementById('dropZone').ondragover = (e) => e.preventDefault();
+        document.getElementById('dropZone').ondrop = (e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); };
+
+        const PROMPT_INSTRUCTION = `
+            NHIỆM VỤ: Trích xuất thông tin để đặt tên file PDF theo chuẩn EVNPECC1.
+            QUY TẮC NGHIÊM NGẶT:
+            1. Ngày: YYYY-MM-DD (Lấy từ ngày ban hành văn bản).
+            2. Số công văn: Phải lấy đầy đủ số và ký hiệu (Ví dụ: 3819_SPMB-PTD). Thay / bằng _.
+            3. Mã Dự án: 
+               - Đường dây: Dùng tiền tố "D2-". Ví dụ: Đường dây Krông Búk - Tây Ninh 1 -> D2-KB-TN1.
+               - Trạm biến áp: Dùng tiền tố "T5-". Ví dụ: Trạm 500kV Krông Búk -> T5-KB.
+               - Rút gọn tên riêng thành chữ cái đầu (Krông Búk -> KB, Tây Ninh -> TN).
+            4. Nội dung: Tối đa 6 từ, không dấu, nối bằng dấu gạch dưới _. Không lặp lại tên dự án.
+            
+            KẾT QUẢ TRẢ VỀ: Chỉ trả về duy nhất 1 dòng văn bản là tên file. KHÔNG GIẢI THÍCH, KHÔNG CHÚ THÍCH.
+            Cấu trúc: [Ngày]-[Số CV]-[Mã Dự án]-[Nội dung].pdf
+        `;
 
         async function handleFiles(files) {
             const key = apiKeyInput.value.trim();
             if(!key) { alert("Nhập API Key!"); return; }
-            
             resultArea.style.display = 'block';
             resultBody.innerHTML = '';
-            debug.innerHTML = "--- BẮT ĐẦU CHẨN ĐOÁN TỰ ĐỘNG ---\n";
+            debug.innerHTML = "> Đang khởi tạo AI...\n";
 
-            // Bước 1: Tự động tìm mô hình phù hợp nhất từ tài khoản của bạn
+            // Tự động tìm mô hình tốt nhất
             let bestModel = "gemini-1.5-flash";
             try {
-                debug.innerHTML += `> Đang quét danh sách mô hình được phép...\n`;
                 const listResp = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${key}`);
                 const listData = await listResp.json();
                 if (listData.models) {
-                    const modelNames = listData.models.map(m => m.name.replace('models/', ''));
-                    debug.innerHTML += `> Tìm thấy: ${modelNames.join(', ')}\n`;
-                    // Ưu tiên các bản cao nhất mà tài khoản có
-                    const priority = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"];
-                    for(let p of priority) {
-                        if(modelNames.includes(p)) { bestModel = p; break; }
-                    }
+                    const mNames = listData.models.map(m => m.name.replace('models/', ''));
+                    const p = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+                    for(let x of p) { if(mNames.includes(x)) { bestModel = x; break; } }
                 }
-            } catch (e) { debug.innerHTML += `> Không thể quét danh sách, dùng mặc định: ${bestModel}\n`; }
-
-            debug.innerHTML += `> ĐÃ CHỌN MÔ HÌNH: ${bestModel}\n`;
+            } catch (e) {}
 
             const genAI = new GoogleGenerativeAI(key);
 
@@ -127,12 +133,15 @@
                     const text = content.items.map(i => i.str).join(' ');
 
                     const model = genAI.getGenerativeModel({ model: bestModel });
-                    const prompt = `TRÍCH XUẤT TÊN FILE PDF CHO EVNPECC1: [YYYY-MM-DD]-[Số CV_Thay / bằng _]-[Mã Dự án D2/T5]-[Nội dung 6 từ_không dấu].pdf. VĂN BẢN: ${text.substring(0, 3000)}`;
+                    const result = await model.generateContent(PROMPT_INSTRUCTION + "\n\nVĂN BẢN CẦN TRÍCH XUẤT:\n" + text.substring(0, 4000));
+                    const responseText = (await result.response).text().trim();
+                    
+                    // Lấy dòng cuối cùng hoặc dòng chứa .pdf để đảm bảo chỉ lấy tên file
+                    const lines = responseText.split('\n');
+                    let finalName = lines.find(l => l.toLowerCase().includes('.pdf')) || lines[lines.length-1];
+                    finalName = finalName.replace(/[*`"]/g, '').trim();
 
-                    const result = await model.generateContent(prompt);
-                    const newName = (await result.response).text().trim().replace(/[`"']/g, '');
-
-                    nameCell.innerText = newName;
+                    nameCell.innerText = finalName;
                     statusCell.innerHTML = '<span class="status status-done">XONG</span>';
                 } catch (e) {
                     nameCell.innerText = "Lỗi: " + e.message;
