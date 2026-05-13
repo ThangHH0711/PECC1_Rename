@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PECC1 Smart Renamer - Auto Vision Fix</title>
+    <title>PECC1 Smart Renamer - Final Stability</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         :root { --evn-blue: #001A72; --evn-red: #FF3C00; --bg: #f8fafc; }
@@ -23,7 +23,6 @@
         .status { font-weight: bold; font-size: 10px; padding: 5px 10px; border-radius: 20px; text-transform: uppercase; }
         .status-loading { background: #fef9c3; color: #854d0e; }
         .status-done { background: #dcfce7; color: #166534; }
-        .status-skip { background: #e2e8f0; color: #475569; }
         .status-error { background: #fee2e2; color: #991b1b; }
         .download-link { color: var(--evn-blue); text-decoration: underline; font-weight: 600; cursor: pointer; }
     </style>
@@ -32,8 +31,8 @@
     <div class="header">
         <a href="#" class="logo">EVN<span>PECC1</span></a>
         <div>
-            <div style="color: var(--evn-blue); font-weight: 800; font-size: 18px">HỆ THỐNG ĐỔI TÊN PDF AI (PHIÊN BẢN SỬA LỖI)</div>
-            <div style="font-size: 11px; color: #64748b; text-align: right">Bản v9.2 - Tự động phát hiện mô hình ổn định nhất</div>
+            <div style="color: var(--evn-blue); font-weight: 800; font-size: 18px">HỆ THỐNG ĐỔI TÊN PDF AI (PHIÊN BẢN SIÊU ỔN ĐỊNH)</div>
+            <div style="font-size: 11px; color: #64748b; text-align: right">Bản v10.0 - Tối ưu hóa chính xác & Loại bỏ gián đoạn</div>
         </div>
     </div>
 
@@ -46,15 +45,15 @@
 
         <div id="dropZone" class="drop-zone">
             <h3>🚀 Kéo thả file PDF vào đây</h3>
-            <p>Hệ thống đã được sửa lỗi kết nối mô hình. Sẵn sàng xử lý!</p>
+            <p>Phiên bản đã tối ưu hóa cho tốc độ và sự ổn định tuyệt đối.</p>
         </div>
 
         <div id="resultArea" style="display: none;">
             <table>
-                <thead><tr><th width="30%">File gốc</th><th width="55%">Tên file đề xuất / Thông báo</th><th width="15%">Trạng thái</th></tr></thead>
+                <thead><tr><th width="30%">File gốc</th><th width="55%">Tên file đề xuất</th><th width="15%">Trạng thái</th></tr></thead>
                 <tbody id="resultBody"></tbody>
             </table>
-            <button class="btn-save" id="btnDownloadAll">TẢI VỀ CÁC FILE ĐÃ ĐỔI TÊN</button>
+            <button class="btn-save" id="btnDownloadAll">TẢI VỀ TOÀN BỘ FILE</button>
         </div>
     </div>
 
@@ -64,33 +63,14 @@
 
         const apiKeyInput = document.getElementById('apiKey');
         const resultBody = document.getElementById('resultBody');
-        let availableModels = [];
+        let availableModels = ["gemini-1.5-flash", "gemini-2.0-flash"];
 
         window.saveKey = () => {
             const key = apiKeyInput.value.trim();
-            if(key) { localStorage.setItem('pecc1_key', key); alert("Đã lưu cấu hình!"); location.reload(); }
+            if(key) { localStorage.setItem('pecc1_key', key); alert("Đã lưu!"); location.reload(); }
         };
 
         apiKeyInput.value = localStorage.getItem('pecc1_key') || '';
-
-        // Dò tìm mô hình hỗ trợ Vision tự động
-        async function discoverModels() {
-            const key = apiKeyInput.value.trim();
-            if(!key) return;
-            try {
-                const r = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${key}`);
-                const d = await r.json();
-                const m = d.models.map(x => x.name.replace('models/', ''));
-                // Ưu tiên các dòng Flash vì chúng hỗ trợ Vision cực tốt
-                const priority = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-2.0-flash", "gemini-2.0-flash-exp"];
-                availableModels = priority.filter(x => m.includes(x));
-                if (availableModels.length === 0) availableModels = [m.find(x => x.includes('flash')) || m[0]];
-            } catch(e) { 
-                availableModels = ["gemini-1.5-flash"]; // Fallback mặc định
-            }
-        }
-
-        discoverModels();
 
         document.getElementById('dropZone').onclick = () => {
             const input = document.createElement('input'); input.type = 'file'; input.multiple = true;
@@ -103,8 +83,6 @@
         async function handleFiles(files) {
             const key = apiKeyInput.value.trim();
             if(!key) return;
-            if(availableModels.length === 0) await discoverModels();
-            
             document.getElementById('resultArea').style.display = 'block';
             resultBody.innerHTML = '';
             const genAI = new GoogleGenerativeAI(key);
@@ -112,50 +90,37 @@
             for (let file of Array.from(files)) {
                 const row = resultBody.insertRow();
                 row.insertCell(0).innerText = file.name;
-                const nameCell = row.insertCell(1); nameCell.innerText = "Đang xử lý Vision...";
-                const statusCell = row.insertCell(2); statusCell.innerHTML = '<span class="status status-loading">VISION</span>';
+                const nameCell = row.insertCell(1); nameCell.innerText = "Đang xử lý...";
+                const statusCell = row.insertCell(2); statusCell.innerHTML = '<span class="status status-loading">CHẠY</span>';
 
                 try {
                     const ab = await file.arrayBuffer();
                     const pdf = await pdfjsLib.getDocument(ab).promise;
                     const page = await pdf.getPage(1);
-                    
-                    const viewport = page.getViewport({ scale: 1.5 });
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
-                    await page.render({ canvasContext: context, viewport: viewport }).promise;
-                    const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+                    const textContent = await page.getTextContent();
+                    const text = textContent.items.map(i => i.str).join(' ').substring(0, 3000);
 
-                    let success = false;
-                    for (let modelName of availableModels) {
-                        try {
-                            const model = genAI.getGenerativeModel({ model: modelName });
-                            const prompt = `Bạn là trợ lý PECC1. Bước 1: Nếu ảnh KHÔNG phải Công văn (là Phụ lục, Bản vẽ), trả về "SKIP_FILE". Bước 2: Nếu LÀ Công văn, đặt tên: [Ngày YYYY-MM-DD]-[MãDựÁn (500kV->D5, 220kV->D2)]-[SốCV]-[NộiDung 8 từ].pdf. Chỉ trả về 1 dòng.`;
-                            
-                            const result = await model.generateContent([
-                                prompt,
-                                { inlineData: { data: base64Image, mimeType: "image/jpeg" } }
-                            ]);
-
-                            let finalRes = (await result.response).text().trim().replace(/[*`"]/g, '');
-                            
-                            if (finalRes.includes("SKIP_FILE")) {
-                                nameCell.innerHTML = `<i style="color: #94a3b8">Bỏ qua (Không phải định dạng công văn)</i>`;
-                                statusCell.innerHTML = '<span class="status status-skip">BỎ QUA</span>';
-                            } else {
-                                const cleanName = finalRes.replace(/\s+/g, '');
-                                nameCell.innerHTML = `<span class="download-link" onclick="downloadSingle('${cleanName}', '${row.dataset.blobUrl}')">${cleanName}</span>`;
-                                statusCell.innerHTML = '<span class="status status-done">XONG</span>';
-                                row.dataset.blob = URL.createObjectURL(new Blob([ab]));
-                                row.dataset.name = cleanName;
-                            }
-                            success = true;
-                            break;
-                        } catch (err) { continue; }
+                    if (!text.trim()) {
+                        throw new Error("File PDF này là file ảnh scan, AI không đọc được chữ. Hãy dùng file PDF có thể copy được chữ.");
                     }
-                    if(!success) throw new Error("Không thể kết nối mô hình Vision");
+
+                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                    const prompt = `Bạn là chuyên gia xử lý văn bản PECC1. Hãy trích xuất thông tin CỰC KỲ CHÍNH XÁC:
+                    1. Ngày: Tìm dòng "Ngày... tháng... năm...", trả về YYYY-MM-DD.
+                    2. Mã Dự án: 500kV->D5, 220kV->D2. Viết tắt địa danh. (VD: D5-ND-PN).
+                    3. Số CV: Tìm sau chữ "Số:", lấy cả phần chữ và số (VD: 362_TVD1-TVLD). KHÔNG ĐƯỢC để 0000.
+                    4. Nội dung: Tóm tắt 8 từ, không dấu, nối bằng _.
+                    CÔNG THỨC: [Ngày]-[MãDựÁn]-[SốCV]-[NộiDung].pdf
+                    TRẢ VỀ 1 DÒNG DUY NHẤT. KHÔNG KHOẢNG TRẮNG.
+                    VĂN BẢN: ${text}`;
+
+                    const result = await model.generateContent(prompt);
+                    let finalName = (await result.response).text().trim().replace(/[*`"\s]/g, '');
+                    
+                    nameCell.innerHTML = `<span class="download-link" onclick="downloadSingle('${finalName}', '${row.dataset.blob}')">${finalName}</span>`;
+                    statusCell.innerHTML = '<span class="status status-done">XONG</span>';
+                    row.dataset.blob = URL.createObjectURL(new Blob([ab]));
+                    row.dataset.name = finalName;
 
                 } catch (e) {
                     nameCell.innerText = "Lỗi: " + e.message;
@@ -165,9 +130,7 @@
         }
 
         window.downloadSingle = (name, url) => {
-            const a = document.createElement('a');
-            const row = Array.from(resultBody.rows).find(r => r.dataset.name === name);
-            if (row) { a.href = row.dataset.blob; a.download = name; a.click(); }
+            const a = document.createElement('a'); a.href = url; a.download = name; a.click();
         };
 
         document.getElementById('btnDownloadAll').onclick = () => {
