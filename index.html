@@ -14,17 +14,16 @@
         .main-card { max-width: 1000px; width: 95%; background: white; margin: 20px; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
         .api-box { background: #eef2ff; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; border: 1px solid #dbeafe; }
         .api-box input { flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
-        .drop-zone { border: 3px dashed #cbd5e1; border-radius: 15px; padding: 40px 20px; text-align: center; cursor: pointer; transition: 0.3s; background: #fafafa; }
+        .drop-zone { border: 3px dashed #cbd5e1; border-radius: 15px; padding: 30px 20px; text-align: center; cursor: pointer; transition: 0.3s; background: #fafafa; }
         .drop-zone:hover { border-color: var(--evn-blue); background: #f0f7ff; }
-        table { width: 100%; border-collapse: collapse; margin-top: 30px; }
-        th { background: var(--evn-blue); color: white; padding: 15px; text-align: left; }
-        td { padding: 15px; border-bottom: 1px solid #f1f5f9; font-size: 14px; word-break: break-all; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background: var(--evn-blue); color: white; padding: 12px; text-align: left; }
+        td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 14px; word-break: break-all; }
         .btn-save { background: var(--evn-red); color: white; border: none; padding: 18px; width: 100%; border-radius: 10px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 25px; }
-        .status { font-weight: bold; font-size: 12px; padding: 4px 8px; border-radius: 6px; }
+        .status { font-weight: bold; font-size: 11px; padding: 4px 8px; border-radius: 6px; }
         .status-loading { background: #fef9c3; color: #854d0e; }
         .status-done { background: #dcfce7; color: #166534; }
         .status-error { background: #fee2e2; color: #991b1b; }
-        #debug { background: #1e293b; color: #38bdf8; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 11px; margin-top: 20px; white-space: pre-wrap; display: block; max-height: 150px; overflow-y: auto; }
     </style>
 </head>
 <body>
@@ -32,7 +31,7 @@
         <a href="#" class="logo">EVN<span>PECC1</span></a>
         <div style="text-align: right">
             <div style="color: var(--evn-blue); font-weight: bold">HỆ THỐNG ĐỔI TÊN PDF AI</div>
-            <div style="font-size: 11px; color: #94a3b8">Bản cập nhật v7.2 (Sửa lỗi Số và Thứ tự)</div>
+            <div style="font-size: 11px; color: #94a3b8">Bản v7.3 (Siêu tốc & Chuẩn D5/T5)</div>
         </div>
     </div>
 
@@ -45,18 +44,16 @@
 
         <div id="dropZone" class="drop-zone">
             <h3>🚀 Kéo thả file PDF vào đây</h3>
-            <p>THỨ TỰ MỚI: [Ngày]-[Mã Dự án]-[Số CV]-[Nội dung].pdf</p>
+            <p>Quy tắc: Ngày-MãDựÁn-SốCV-NộiDung.pdf (Không khoảng trắng)</p>
         </div>
 
         <div id="resultArea" style="display: none;">
             <table>
-                <thead><tr><th>File gốc</th><th>Tên file đề xuất (AI)</th><th>Trạng thái</th></tr></thead>
+                <thead><tr><th>File gốc</th><th>Tên file mới (AI)</th><th>Trạng thái</th></tr></thead>
                 <tbody id="resultBody"></tbody>
             </table>
-            <button class="btn-save" onclick="alert('Đã sẵn sàng tải về!')">XÁC NHẬN & LƯU</button>
+            <button class="btn-save" onclick="alert('Đã sẵn sàng!')">XÁC NHẬN & LƯU</button>
         </div>
-
-        <div id="debug">--- CHỜ KÉO THẢ FILE ---</div>
     </div>
 
     <script type="module">
@@ -64,13 +61,12 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         const apiKeyInput = document.getElementById('apiKey');
-        const resultArea = document.getElementById('resultArea');
         const resultBody = document.getElementById('resultBody');
-        const debug = document.getElementById('debug');
+        let cachedModel = null;
 
         window.saveKey = () => {
             const key = apiKeyInput.value.trim();
-            if(key) { localStorage.setItem('pecc1_key', key); alert("Đã lưu mã!"); location.reload(); }
+            if(key) { localStorage.setItem('pecc1_key', key); alert("Đã lưu!"); location.reload(); }
         };
 
         apiKeyInput.value = localStorage.getItem('pecc1_key') || '';
@@ -83,63 +79,51 @@
         document.getElementById('dropZone').ondragover = (e) => e.preventDefault();
         document.getElementById('dropZone').ondrop = (e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); };
 
-        const PROMPT_INSTRUCTION = `
-            NHIỆM VỤ: Đặt tên file PDF theo đúng công thức sau.
-            CÔNG THỨC BẮT BUỘC: [Ngày] - [Mã Dự án] - [Số CV] - [Nội dung].pdf
-            
-            HƯỚNG DẪN CHI TIẾT:
-            1. [Ngày]: Định dạng YYYY-MM-DD.
-            2. [Mã Dự án]: BẮT BUỘC ĐỨNG THỨ HAI. 
-               - Trạm 500kV Krông Búk -> T5-KB.
-               - Đường dây Krông Búk - Tây Ninh 1 -> D2-KB-TN1.
-            3. [Số CV]: BẮT BUỘC ĐỨNG THỨ BA. Phải tìm bằng được phần SỐ (ví dụ: 3819, 124, 05...). 
-               Kết quả phải có dạng: 3819_EVNNPT-DTXD. (Thay / bằng _).
-            4. [Nội dung]: Tối đa 6 từ, không dấu, nối bằng _.
-            
-            YÊU CẦU: Chỉ trả về 1 dòng tên file duy nhất. Không giải thích.
-        `;
-
         async function handleFiles(files) {
             const key = apiKeyInput.value.trim();
             if(!key) { alert("Nhập API Key!"); return; }
-            resultArea.style.display = 'block';
+            document.getElementById('resultArea').style.display = 'block';
             resultBody.innerHTML = '';
-            debug.innerHTML = "> Đang kết nối AI...\n";
 
-            let bestModel = "gemini-1.5-flash";
-            try {
-                const listResp = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${key}`);
-                const listData = await listResp.json();
-                if (listData.models) {
-                    const mNames = listData.models.map(m => m.name.replace('models/', ''));
-                    const p = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
-                    for(let x of p) { if(mNames.includes(x)) { bestModel = x; break; } }
-                }
-            } catch (e) {}
+            // Tự động tìm model (chỉ chạy 1 lần)
+            if (!cachedModel) {
+                try {
+                    const r = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${key}`);
+                    const d = await r.json();
+                    const m = d.models.map(x => x.name.replace('models/', ''));
+                    cachedModel = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"].find(x => m.includes(x)) || "gemini-1.5-flash";
+                } catch(e) { cachedModel = "gemini-1.5-flash"; }
+            }
 
             const genAI = new GoogleGenerativeAI(key);
 
             for (let file of Array.from(files)) {
                 const row = resultBody.insertRow();
                 row.insertCell(0).innerText = file.name;
-                const nameCell = row.insertCell(1); nameCell.innerText = "Đang phân tích...";
+                const nameCell = row.insertCell(1); nameCell.innerText = "Đang xử lý...";
                 const statusCell = row.insertCell(2); statusCell.innerHTML = '<span class="status status-loading">CHẠY</span>';
 
                 try {
-                    const arrayBuffer = await file.arrayBuffer();
-                    const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                    const ab = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument(ab).promise;
                     const page = await pdf.getPage(1);
-                    const content = await page.getTextContent();
-                    const text = content.items.map(i => i.str).join(' ');
+                    const text = (await page.getTextContent()).items.map(i => i.str).join(' ');
 
-                    const model = genAI.getGenerativeModel({ model: bestModel });
-                    const result = await model.generateContent(PROMPT_INSTRUCTION + "\n\nVĂN BẢN PDF:\n" + text.substring(0, 4000));
-                    let finalName = (await result.response).text().trim().replace(/[*`"]/g, '');
+                    const model = genAI.getGenerativeModel({ model: cachedModel });
+                    const prompt = `Bạn là chuyên gia PECC1. Trích xuất tên file PDF theo công thức: [Ngày]-[MãDựÁn]-[SốCV]-[NộiDung].pdf
+                    Quy tắc Mã Dự Án:
+                    - Nếu dự án là 500kV: Dùng D5- (Đường dây) hoặc T5- (Trạm).
+                    - Nếu dự án là 220kV: Dùng D2- (Đường dây) hoặc T2- (Trạm).
+                    - Tên dự án viết tắt (Ví dụ: Krông Búk -> KB).
+                    Yêu cầu Số CV: Phải có phần số (VD: 3819_EVNNPT).
+                    Yêu cầu Nội dung: 6 từ, không dấu, nối bằng _.
+                    KẾT QUẢ: CHỈ TRẢ VỀ TÊN FILE, KHÔNG KHOẢNG TRẮNG, KHÔNG GIẢI THÍCH.
+                    VĂN BẢN: ${text.substring(0, 3000)}`;
+
+                    const result = await model.generateContent(prompt);
+                    let name = (await result.response).text().trim().replace(/[*`"\s]/g, ''); // Xóa sạch khoảng trắng và ký tự lạ
                     
-                    // Làm sạch dấu gạch dưới thừa
-                    finalName = finalName.replace(/-_/g, '-').replace(/_-/g, '-').replace(/^_+|_+$/g, '');
-
-                    nameCell.innerText = finalName;
+                    nameCell.innerText = name;
                     statusCell.innerHTML = '<span class="status status-done">XONG</span>';
                 } catch (e) {
                     nameCell.innerText = "Lỗi: " + e.message;
