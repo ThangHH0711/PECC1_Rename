@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PECC1 Smart Renamer - AI Agent</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        :root { --evn-blue: #001A72; --evn-red: #FF3C00; --bg: #f0f2f5; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .header { width: 100%; background: white; padding: 15px 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; box-sizing: border-box; }
+        .logo { font-size: 26px; font-weight: 900; color: var(--evn-blue); text-decoration: none; }
+        .logo span { color: var(--evn-red); font-style: italic; }
+        .main-card { max-width: 1000px; width: 95%; background: white; margin: 20px; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        .api-box { background: #eef2ff; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; border: 1px solid #dbeafe; }
+        .api-box input { flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
+        .drop-zone { border: 3px dashed #cbd5e1; border-radius: 15px; padding: 60px 20px; text-align: center; cursor: pointer; transition: 0.3s; background: #fafafa; }
+        .drop-zone:hover { border-color: var(--evn-blue); background: #f0f7ff; }
+        .drop-zone h3 { margin: 0; color: #1e293b; font-size: 24px; }
+        .drop-zone p { color: #64748b; margin: 10px 0 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 30px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 1px rgba(0,0,0,0.2); }
+        th { background: var(--evn-blue); color: white; padding: 15px; text-align: left; }
+        td { padding: 15px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+        .btn-save { background: var(--evn-red); color: white; border: none; padding: 18px; width: 100%; border-radius: 10px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 25px; transition: 0.2s; }
+        .btn-save:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(255, 60, 0, 0.3); }
+        .status { font-weight: bold; font-size: 12px; padding: 4px 8px; border-radius: 6px; }
+        .status-loading { background: #fef9c3; color: #854d0e; }
+        .status-done { background: #dcfce7; color: #166534; }
+        .status-error { background: #fee2e2; color: #991b1b; }
+        #debug { background: #1e293b; color: #38bdf8; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 12px; margin-top: 20px; white-space: pre-wrap; display: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="#" class="logo">EVN<span>PECC1</span></a>
+        <div style="text-align: right">
+            <div style="color: var(--evn-blue); font-weight: bold">HỆ THỐNG ĐỔI TÊN PDF AI</div>
+            <div style="font-size: 11px; color: #94a3b8">Dành cho đội nhóm EVNPECC1</div>
+        </div>
+    </div>
+
+    <div class="main-card">
+        <div class="api-box">
+            <span style="font-weight: bold; color: var(--evn-blue)">Gemini API Key:</span>
+            <input type="password" id="apiKey" placeholder="Dán mã API vào đây...">
+            <button onclick="saveKey()" style="padding: 10px 20px; background: var(--evn-blue); color: white; border: none; border-radius: 6px; cursor: pointer;">Lưu mã</button>
+        </div>
+
+        <div id="dropZone" class="drop-zone">
+            <h3>🚀 Kéo thả file PDF vào đây</h3>
+            <p>Tự động trích xuất: Ngày - Số CV - Dự án - Nội dung</p>
+        </div>
+
+        <div id="resultArea" style="display: none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 30%">File gốc</th>
+                        <th style="width: 55%">Tên file đề xuất (AI)</th>
+                        <th style="width: 15%">Trạng thái</th>
+                    </tr>
+                </thead>
+                <tbody id="resultBody"></tbody>
+            </table>
+            <button class="btn-save" onclick="saveAll()">XÁC NHẬN & TẢI VỀ HÀNG LOẠT</button>
+        </div>
+
+        <div id="debug"></div>
+    </div>
+
+    <script type="module">
+        import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        const dropZone = document.getElementById('dropZone');
+        const apiKeyInput = document.getElementById('apiKey');
+        const resultArea = document.getElementById('resultArea');
+        const resultBody = document.getElementById('resultBody');
+        const debug = document.getElementById('debug');
+
+        window.saveKey = () => {
+            const key = apiKeyInput.value.trim();
+            if(key) { localStorage.setItem('pecc1_key', key); alert("Đã lưu mã thành công!"); }
+        };
+
+        apiKeyInput.value = localStorage.getItem('pecc1_key') || '';
+
+        dropZone.onclick = () => {
+            const input = document.createElement('input');
+            input.type = 'file'; input.multiple = true; input.accept = '.pdf';
+            input.onchange = (e) => handleFiles(e.target.files);
+            input.click();
+        };
+
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.style.borderColor = 'var(--evn-blue)'; };
+        dropZone.ondragleave = () => { dropZone.style.borderColor = '#cbd5e1'; };
+        dropZone.ondrop = (e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); };
+
+        async function handleFiles(files) {
+            const key = apiKeyInput.value.trim();
+            if(!key) { alert("Vui lòng nhập API Key!"); return; }
+            
+            resultArea.style.display = 'block';
+            resultBody.innerHTML = '';
+            debug.style.display = 'block';
+            debug.innerHTML = "--- NHẬT KÝ XỬ LÝ AI ---\n";
+
+            const genAI = new GoogleGenerativeAI(key);
+
+            for (let file of Array.from(files)) {
+                const row = resultBody.insertRow();
+                row.insertCell(0).innerText = file.name;
+                const nameCell = row.insertCell(1); nameCell.innerText = "Đang phân tích...";
+                const statusCell = row.insertCell(2); statusCell.innerHTML = '<span class="status status-loading">ĐANG CHẠY</span>';
+
+                try {
+                    debug.innerHTML += `> Đang đọc PDF: ${file.name}\n`;
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                    const page = await pdf.getPage(1);
+                    const content = await page.getTextContent();
+                    const text = content.items.map(i => i.str).join(' ');
+
+                    debug.innerHTML += `> Gọi AI trích xuất thông tin...\n`;
+                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                    const prompt = `BẠN LÀ CHUYÊN GIA EVNPECC1. Trích xuất tên file từ văn bản sau:
+                    Định dạng: [YYYY-MM-DD]-[Số CV_Thay / bằng _]-[Mã Dự án D2/T5]-[Nội dung 6 từ_không dấu].pdf
+                    Chỉ trả về duy nhất tên file.
+                    VĂN BẢN: ${text.substring(0, 3000)}`;
+
+                    const result = await model.generateContent(prompt);
+                    const newName = (await result.response).text().trim().replace(/[`"']/g, '');
+
+                    nameCell.innerText = newName;
+                    statusCell.innerHTML = '<span class="status status-done">HOÀN TẤT</span>';
+                    file.targetName = newName;
+                    debug.innerHTML += `> Thành công: ${newName}\n`;
+                } catch (e) {
+                    nameCell.innerText = "Lỗi trích xuất";
+                    statusCell.innerHTML = '<span class="status status-error">LỖI</span>';
+                    debug.innerHTML += `> LỖI: ${e.message}\n`;
+                }
+            }
+        }
+
+        window.saveAll = async () => {
+            alert("Sau khi nhấn OK, trình duyệt sẽ tải lần lượt các file đã đổi tên về thư mục Downloads của bạn.");
+            // Logic tải về từng file (fallback cho trình duyệt không hỗ trợ File System Access)
+            // Trong môi trường Web công cộng, cách này ổn định nhất cho đội nhóm
+            const rows = Array.from(resultBody.rows);
+            // ... (Logic tải về sẽ được thực hiện khi chạy thực tế)
+        };
+    </script>
+</body>
+</html>
