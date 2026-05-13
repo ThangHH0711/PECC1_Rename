@@ -117,31 +117,34 @@
                     CÔNG THỨC: [Ngày]-[MãDựÁn]-[SốCV]-[NộiDung].pdf
                     TRẢ VỀ 1 DÒNG DUY NHẤT. KHÔNG KHOẢNG TRẮNG.`;
 
-                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-                    let result;
+                    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
+                    let result = null;
+                    let lastError = "";
 
-                    if (extractedText.trim().length > 100) {
-                        // Nếu có văn bản, dùng văn bản cho nhanh
-                        statusCell.innerHTML = '<span class="status status-loading">PHÂN TÍCH TEXT</span>';
-                        result = await model.generateContent(prompt + "\nVĂN BẢN: " + extractedText);
-                    } else {
-                        // Nếu là file scan (ít chữ), dùng Vision
-                        statusCell.innerHTML = '<span class="status status-loading">AI ĐANG QUÉT ẢNH (SCAN)</span>';
-                        
-                        const viewport = page.getViewport({ scale: 2.0 });
-                        const canvas = document.createElement('canvas');
-                        const context = canvas.getContext('2d');
-                        canvas.height = viewport.height;
-                        canvas.width = viewport.width;
-                        
-                        await page.render({ canvasContext: context, viewport: viewport }).promise;
-                        const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-                        
-                        result = await model.generateContent([
-                            prompt,
-                            { inlineData: { data: base64Image, mimeType: "image/jpeg" } }
-                        ]);
+                    for (let modelName of modelsToTry) {
+                        try {
+                            const model = genAI.getGenerativeModel({ model: modelName });
+                            if (extractedText.trim().length > 100) {
+                                statusCell.innerHTML = `<span class="status status-loading">PHÂN TÍCH (${modelName})</span>`;
+                                result = await model.generateContent(prompt + "\nVĂN BẢN: " + extractedText);
+                            } else {
+                                statusCell.innerHTML = `<span class="status status-loading">VISION (${modelName})</span>`;
+                                const viewport = page.getViewport({ scale: 2.0 });
+                                const canvas = document.createElement('canvas');
+                                const context = canvas.getContext('2d');
+                                canvas.height = viewport.height; canvas.width = viewport.width;
+                                await page.render({ canvasContext: context, viewport: viewport }).promise;
+                                const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+                                result = await model.generateContent([prompt, { inlineData: { data: base64Image, mimeType: "image/jpeg" } }]);
+                            }
+                            if (result) break;
+                        } catch (err) {
+                            lastError = err.message;
+                            continue; // Thử mô hình tiếp theo
+                        }
                     }
+
+                    if (!result) throw new Error("Không thể kết nối với AI. Lỗi cuối: " + lastError);
 
                     let finalName = (await result.response).text().trim().replace(/[*`"\s]/g, '');
                     if (!finalName.endsWith(".pdf")) finalName += ".pdf";
