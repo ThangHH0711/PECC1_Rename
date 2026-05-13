@@ -104,47 +104,34 @@
 
                     const pdf = await pdfjsLib.getDocument(ab).promise;
                     const page = await pdf.getPage(1);
-                    
-                    // Thử trích xuất văn bản trước
                     const textContent = await page.getTextContent();
-                    const extractedText = textContent.items.map(i => i.str).join(' ').substring(0, 3000);
+                    const text = textContent.items.map(i => i.str).join(' ').substring(0, 3000);
 
-                    let prompt = `Bạn là chuyên gia xử lý văn bản PECC1. Hãy trích xuất thông tin CỰC KỲ CHÍNH XÁC:
+                    if (!text.trim()) {
+                        throw new Error("File PDF này là file ảnh scan, AI không đọc được chữ.");
+                    }
+
+                    const prompt = `Bạn là chuyên gia xử lý văn bản PECC1. Hãy trích xuất thông tin CỰC KỲ CHÍNH XÁC:
                     1. Ngày: Tìm dòng "Ngày... tháng... năm...", trả về YYYY-MM-DD.
                     2. Mã Dự án: 500kV->D5, 220kV->D2. Viết tắt địa danh. (VD: D5-ND-PN).
                     3. Số CV: Tìm sau chữ "Số:", lấy cả phần chữ và số (VD: 362_TVD1-TVLD). KHÔNG ĐƯỢC để 0000.
                     4. Nội dung: Tóm tắt 8 từ, không dấu, nối bằng _.
                     CÔNG THỨC: [Ngày]-[MãDựÁn]-[SốCV]-[NộiDung].pdf
-                    TRẢ VỀ 1 DÒNG DUY NHẤT. KHÔNG KHOẢNG TRẮNG.`;
+                    TRẢ VỀ 1 DÒNG DUY NHẤT. KHÔNG KHOẢNG TRẮNG.
+                    VĂN BẢN: ${text}`;
 
-                    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
                     let result = null;
-                    let lastError = "";
-
-                    for (let modelName of modelsToTry) {
+                    const models = ["gemini-1.5-flash", "gemini-pro"];
+                    
+                    for (let mName of models) {
                         try {
-                            const model = genAI.getGenerativeModel({ model: modelName });
-                            if (extractedText.trim().length > 100) {
-                                statusCell.innerHTML = `<span class="status status-loading">PHÂN TÍCH (${modelName})</span>`;
-                                result = await model.generateContent(prompt + "\nVĂN BẢN: " + extractedText);
-                            } else {
-                                statusCell.innerHTML = `<span class="status status-loading">VISION (${modelName})</span>`;
-                                const viewport = page.getViewport({ scale: 2.0 });
-                                const canvas = document.createElement('canvas');
-                                const context = canvas.getContext('2d');
-                                canvas.height = viewport.height; canvas.width = viewport.width;
-                                await page.render({ canvasContext: context, viewport: viewport }).promise;
-                                const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-                                result = await model.generateContent([prompt, { inlineData: { data: base64Image, mimeType: "image/jpeg" } }]);
-                            }
+                            const model = genAI.getGenerativeModel({ model: mName });
+                            result = await model.generateContent(prompt);
                             if (result) break;
-                        } catch (err) {
-                            lastError = err.message;
-                            continue; // Thử mô hình tiếp theo
-                        }
+                        } catch (e) { continue; }
                     }
 
-                    if (!result) throw new Error("Không thể kết nối với AI. Lỗi cuối: " + lastError);
+                    if (!result) throw new Error("Không thể kết nối với AI (404/API Error).");
 
                     let finalName = (await result.response).text().trim().replace(/[*`"\s]/g, '');
                     if (!finalName.endsWith(".pdf")) finalName += ".pdf";
