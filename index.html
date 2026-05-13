@@ -32,7 +32,7 @@
         <a href="#" class="logo">EVN<span>PECC1</span></a>
         <div style="text-align: right">
             <div style="color: var(--evn-blue); font-weight: bold">HỆ THỐNG ĐỔI TÊN PDF AI</div>
-            <div style="font-size: 11px; color: #94a3b8">Phiên bản Chính xác Tuyệt đối v7.0</div>
+            <div style="font-size: 11px; color: #94a3b8">Bản cập nhật v7.2 (Sửa lỗi Số và Thứ tự)</div>
         </div>
     </div>
 
@@ -45,7 +45,7 @@
 
         <div id="dropZone" class="drop-zone">
             <h3>🚀 Kéo thả file PDF vào đây</h3>
-            <p>Trích xuất chuẩn: [Ngày]-[Số CV]-[Mã Dự án]-[Nội dung].pdf</p>
+            <p>THỨ TỰ MỚI: [Ngày]-[Mã Dự án]-[Số CV]-[Nội dung].pdf</p>
         </div>
 
         <div id="resultArea" style="display: none;">
@@ -84,18 +84,19 @@
         document.getElementById('dropZone').ondrop = (e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); };
 
         const PROMPT_INSTRUCTION = `
-            NHIỆM VỤ: Trích xuất thông tin để đặt tên file PDF theo chuẩn EVNPECC1.
-            QUY TẮC NGHIÊM NGẶT:
-            1. Ngày: YYYY-MM-DD (Lấy từ ngày ban hành văn bản).
-            2. Số công văn: Phải lấy đầy đủ số và ký hiệu (Ví dụ: 3819_SPMB-PTD). Thay / bằng _.
-            3. Mã Dự án: 
-               - Đường dây: Dùng tiền tố "D2-". Ví dụ: Đường dây Krông Búk - Tây Ninh 1 -> D2-KB-TN1.
-               - Trạm biến áp: Dùng tiền tố "T5-". Ví dụ: Trạm 500kV Krông Búk -> T5-KB.
-               - Rút gọn tên riêng thành chữ cái đầu (Krông Búk -> KB, Tây Ninh -> TN).
-            4. Nội dung: Tối đa 6 từ, không dấu, nối bằng dấu gạch dưới _. Không lặp lại tên dự án.
+            NHIỆM VỤ: Đặt tên file PDF theo đúng công thức sau.
+            CÔNG THỨC BẮT BUỘC: [Ngày] - [Mã Dự án] - [Số CV] - [Nội dung].pdf
             
-            KẾT QUẢ TRẢ VỀ: Chỉ trả về duy nhất 1 dòng văn bản là tên file. KHÔNG GIẢI THÍCH, KHÔNG CHÚ THÍCH.
-            Cấu trúc: [Ngày]-[Số CV]-[Mã Dự án]-[Nội dung].pdf
+            HƯỚNG DẪN CHI TIẾT:
+            1. [Ngày]: Định dạng YYYY-MM-DD.
+            2. [Mã Dự án]: BẮT BUỘC ĐỨNG THỨ HAI. 
+               - Trạm 500kV Krông Búk -> T5-KB.
+               - Đường dây Krông Búk - Tây Ninh 1 -> D2-KB-TN1.
+            3. [Số CV]: BẮT BUỘC ĐỨNG THỨ BA. Phải tìm bằng được phần SỐ (ví dụ: 3819, 124, 05...). 
+               Kết quả phải có dạng: 3819_EVNNPT-DTXD. (Thay / bằng _).
+            4. [Nội dung]: Tối đa 6 từ, không dấu, nối bằng _.
+            
+            YÊU CẦU: Chỉ trả về 1 dòng tên file duy nhất. Không giải thích.
         `;
 
         async function handleFiles(files) {
@@ -103,9 +104,8 @@
             if(!key) { alert("Nhập API Key!"); return; }
             resultArea.style.display = 'block';
             resultBody.innerHTML = '';
-            debug.innerHTML = "> Đang khởi tạo AI...\n";
+            debug.innerHTML = "> Đang kết nối AI...\n";
 
-            // Tự động tìm mô hình tốt nhất
             let bestModel = "gemini-1.5-flash";
             try {
                 const listResp = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${key}`);
@@ -122,7 +122,7 @@
             for (let file of Array.from(files)) {
                 const row = resultBody.insertRow();
                 row.insertCell(0).innerText = file.name;
-                const nameCell = row.insertCell(1); nameCell.innerText = "Đang xử lý...";
+                const nameCell = row.insertCell(1); nameCell.innerText = "Đang phân tích...";
                 const statusCell = row.insertCell(2); statusCell.innerHTML = '<span class="status status-loading">CHẠY</span>';
 
                 try {
@@ -133,13 +133,11 @@
                     const text = content.items.map(i => i.str).join(' ');
 
                     const model = genAI.getGenerativeModel({ model: bestModel });
-                    const result = await model.generateContent(PROMPT_INSTRUCTION + "\n\nVĂN BẢN CẦN TRÍCH XUẤT:\n" + text.substring(0, 4000));
-                    const responseText = (await result.response).text().trim();
+                    const result = await model.generateContent(PROMPT_INSTRUCTION + "\n\nVĂN BẢN PDF:\n" + text.substring(0, 4000));
+                    let finalName = (await result.response).text().trim().replace(/[*`"]/g, '');
                     
-                    // Lấy dòng cuối cùng hoặc dòng chứa .pdf để đảm bảo chỉ lấy tên file
-                    const lines = responseText.split('\n');
-                    let finalName = lines.find(l => l.toLowerCase().includes('.pdf')) || lines[lines.length-1];
-                    finalName = finalName.replace(/[*`"]/g, '').trim();
+                    // Làm sạch dấu gạch dưới thừa
+                    finalName = finalName.replace(/-_/g, '-').replace(/_-/g, '-').replace(/^_+|_+$/g, '');
 
                     nameCell.innerText = finalName;
                     statusCell.innerHTML = '<span class="status status-done">XONG</span>';
