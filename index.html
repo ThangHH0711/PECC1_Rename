@@ -43,9 +43,21 @@
             <button onclick="saveKey()" style="padding: 12px 25px; background: var(--evn-blue); color: white; border: none; border-radius: 8px; cursor: pointer;">LƯU MÃ</button>
         </div>
 
-        <div id="dropZone" class="drop-zone">
-            <h3>🚀 Kéo thả file PDF vào đây</h3>
-            <p>Phiên bản đã tối ưu hóa cho tốc độ và sự ổn định tuyệt đối.</p>
+        <div style="display: flex; gap: 15px; margin-bottom: 25px;">
+            <div id="dropZone" class="drop-zone" style="flex: 2;">
+                <h3>🚀 Kéo thả file PDF vào đây</h3>
+                <p>Hỗ trợ thêm file không giới hạn</p>
+            </div>
+            <div id="dirPickerBox" style="flex: 1; border: 3px dashed #cbd5e1; border-radius: 18px; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; background: #fff;" onclick="selectDir()">
+                <div id="dirStatus" style="font-weight: bold; color: var(--evn-red); text-align: center;">📂 CHƯA CHỌN<br>THƯ MỤC LƯU</div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">(Lưu tự động sau khi AI xử lý)</div>
+            </div>
+        </div>
+
+        <div id="statsBar" style="display: none; background: var(--evn-blue); color: white; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: space-around; font-weight: bold;">
+            <span>TỔNG: <span id="totalCount">0</span></span>
+            <span>ĐÃ XONG: <span id="doneCount">0</span></span>
+            <span>LỖI: <span id="errorCount">0</span></span>
         </div>
 
         <div id="resultArea" style="display: none;">
@@ -53,7 +65,7 @@
                 <thead><tr><th width="30%">File gốc</th><th width="55%">Tên file đề xuất</th><th width="15%">Trạng thái</th></tr></thead>
                 <tbody id="resultBody"></tbody>
             </table>
-            <button class="btn-save" id="btnDownloadAll">TẢI VỀ TOÀN BỘ FILE</button>
+            <button class="btn-save" id="btnDownloadAll">TẢI VỀ CÁC FILE CHƯA LƯU</button>
         </div>
     </div>
 
@@ -63,11 +75,20 @@
 
         const apiKeyInput = document.getElementById('apiKey');
         const resultBody = document.getElementById('resultBody');
-        let availableModels = ["gemini-1.5-flash", "gemini-2.0-flash"];
+        let targetDirHandle = null;
+        let stats = { total: 0, done: 0, error: 0 };
 
         window.saveKey = () => {
             const key = apiKeyInput.value.trim();
-            if(key) { localStorage.setItem('pecc1_key', key); alert("Đã lưu!"); location.reload(); }
+            if(key) { localStorage.setItem('pecc1_key', key); alert("Đã lưu mã API!"); }
+        };
+
+        window.selectDir = async () => {
+            try {
+                targetDirHandle = await window.showDirectoryPicker();
+                document.getElementById('dirStatus').innerHTML = "📂 ĐÃ CHỌN THƯ MỤC:<br>" + targetDirHandle.name;
+                document.getElementById('dirStatus').style.color = "#166534";
+            } catch (e) { console.log("Hủy chọn thư mục"); }
         };
 
         apiKeyInput.value = localStorage.getItem('pecc1_key') || '';
@@ -80,36 +101,39 @@
         document.getElementById('dropZone').ondragover = (e) => e.preventDefault();
         document.getElementById('dropZone').ondrop = (e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); };
 
+        function updateStats() {
+            document.getElementById('statsBar').style.display = 'flex';
+            document.getElementById('totalCount').innerText = stats.total;
+            document.getElementById('doneCount').innerText = stats.done;
+            document.getElementById('errorCount').innerText = stats.error;
+        }
+
         async function handleFiles(files) {
             const key = apiKeyInput.value.trim();
-            if(!key) return;
+            if(!key) { alert("Vui lòng nhập API Key!"); return; }
             document.getElementById('resultArea').style.display = 'block';
-            resultBody.innerHTML = '';
             const genAI = new GoogleGenerativeAI(key);
 
             for (let file of Array.from(files)) {
+                stats.total++;
+                updateStats();
                 const row = resultBody.insertRow();
                 row.insertCell(0).innerText = file.name;
                 const nameCell = row.insertCell(1); nameCell.innerText = "Đang xử lý...";
                 const statusCell = row.insertCell(2); statusCell.innerHTML = '<span class="status status-loading">CHẠY</span>';
 
                 try {
-                    if (file.size === 0) {
-                        throw new Error("File PDF này bị trống (0 bytes). Hãy kiểm tra lại file gốc.");
-                    }
+                    if (file.size === 0) throw new Error("File trống (0 bytes)");
 
                     const ab = await file.arrayBuffer();
-                    const blobUrl = URL.createObjectURL(new Blob([ab], { type: 'application/pdf' }));
+                    const blob = new Blob([ab], { type: 'application/pdf' });
+                    const blobUrl = URL.createObjectURL(blob);
                     row.dataset.blob = blobUrl;
 
                     const pdf = await pdfjsLib.getDocument(ab).promise;
                     const page = await pdf.getPage(1);
                     const textContent = await page.getTextContent();
                     const text = textContent.items.map(i => i.str).join(' ').substring(0, 3000);
-
-                    if (!text.trim()) {
-                        throw new Error("File PDF này là file ảnh scan, AI không đọc được chữ.");
-                    }
 
                     const prompt = `Bạn là chuyên gia xử lý văn bản PECC1. Hãy trích xuất thông tin CỰC KỲ CHÍNH XÁC:
                     1. Ngày: Tìm dòng "Ngày... tháng... năm...", trả về YYYY-MM-DD.
@@ -121,17 +145,29 @@
                     VĂN BẢN: ${text}`;
 
                     let result = null;
-                    const models = ["gemini-1.5-flash", "gemini-pro"];
+                    const models = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-pro"];
                     
                     for (let mName of models) {
                         try {
                             const model = genAI.getGenerativeModel({ model: mName });
-                            result = await model.generateContent(prompt);
+                            if (text.trim().length > 150) {
+                                statusCell.innerHTML = `<span class="status status-loading">AI ${mName.slice(-5)}</span>`;
+                                result = await model.generateContent(prompt);
+                            } else {
+                                statusCell.innerHTML = `<span class="status status-loading">OCR ${mName.slice(-5)}</span>`;
+                                const viewport = page.getViewport({ scale: 2.0 });
+                                const canvas = document.createElement('canvas');
+                                const context = canvas.getContext('2d');
+                                canvas.height = viewport.height; canvas.width = viewport.width;
+                                await page.render({ canvasContext: context, viewport: viewport }).promise;
+                                const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+                                result = await model.generateContent([prompt, { inlineData: { data: base64Image, mimeType: "image/jpeg" } }]);
+                            }
                             if (result) break;
                         } catch (e) { continue; }
                     }
 
-                    if (!result) throw new Error("Không thể kết nối với AI (404/API Error).");
+                    if (!result) throw new Error("API 404/Limit");
 
                     let finalName = (await result.response).text().trim().replace(/[*`"\s]/g, '');
                     if (!finalName.endsWith(".pdf")) finalName += ".pdf";
@@ -139,11 +175,23 @@
                     row.dataset.name = finalName;
                     nameCell.innerHTML = `<span class="download-link" onclick="downloadSingle('${finalName}', '${blobUrl}')">${finalName}</span>`;
                     statusCell.innerHTML = '<span class="status status-done">XONG</span>';
+                    stats.done++;
+
+                    // Tự động lưu nếu đã chọn thư mục
+                    if (targetDirHandle) {
+                        const fileHandle = await targetDirHandle.getFileHandle(finalName, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        statusCell.innerHTML = '<span class="status status-done">ĐÃ LƯU ✓</span>';
+                    }
 
                 } catch (e) {
                     nameCell.innerText = "Lỗi: " + e.message;
                     statusCell.innerHTML = '<span class="status status-error">LỖI</span>';
+                    stats.error++;
                 }
+                updateStats();
             }
         }
 
